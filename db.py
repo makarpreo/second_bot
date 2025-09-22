@@ -2,6 +2,15 @@ import mysql.connector
 from mysql.connector import Error
 from typing import Optional, List, Tuple, Any, Union
 from config import *
+from pyvin import VIN
+
+
+def vin_info(vin):
+    try:
+        vehicle = VIN(str(vin))
+        return vehicle.Make, vehicle.Model, vehicle.ModelYear
+    finally:
+        return ' '
 
 
 class Table:
@@ -55,6 +64,18 @@ class Table:
             if conn and conn.is_connected():
                 conn.close()
 
+    def check_day(self, date):
+        query = f'select date, time, duration from main where date="{date}";'
+        results = self.execute_query(query, fetch=True)
+        clear_time = {'10': 1, '11': 1, '12': 1, '13': 1, '14': 1, '15': 1, '16': 1, '17': 1, '18': 1, }
+        if results:
+            for row in results:
+                for i in range(row[2]):
+                    clear_time[str(row[1] + i)] = 0
+            print(clear_time)
+        else:
+            print(f"ошибка")
+        return clear_time
     def print_rows(self) -> None:
         """Выводит все строки таблицы"""
         query = f'SELECT * FROM {self.table_name};'
@@ -78,11 +99,13 @@ class Table:
         return (f"поле изменено"
                 if result else f'Ошибка')
 
+
 # Пример использования
 if __name__ == '__main__':
     table = Table()
-    table.add(['test', 15, 'test', 'test', 'test', 'test', 'test'])
+    # table.add(['test', 15, 'test', 'test', 'test', 'test', 'test'])
     # table.change_column_by_id(1, 'time', 14)
     # cars.print_note(7)
+    table.check_day('2025-09-24')
     # cars.show_active_list()
     print('success')
