@@ -1,6 +1,6 @@
 from datetime import date, timedelta
 import telebot
-# from telegram_bot_calendar import DetailedTelegramCalendar, WMonthTelegramCalendar
+from telegram_bot_calendar import DetailedTelegramCalendar, WMonthTelegramCalendar
 from telebot.types import (
     InlineKeyboardMarkup, InlineKeyboardButton
 )
@@ -22,6 +22,16 @@ GROUP_CHAT_ID = config.chat_id
 bot = telebot.TeleBot(TOKEN)
 # Хранилище сессий пользователей
 user_sessions = {}
+print("MyTranslationCalendar methods:", dir(MyTranslationCalendar))
+print("WMonthTelegramCalendar methods:", dir(WMonthTelegramCalendar))
+
+# Или проверим callback данные
+
+#
+# @bot.callback_query_handler(func=lambda call: True)
+# def debug_callback(call):
+#     print(f"Full callback data: {call.data}")
+
 
 
 def get_user_data(user_id):
@@ -82,8 +92,10 @@ def handle_command_callback(call):
     elif command == '/change_phone':
         change_phone(mock_message)
 
-    bot.answer_callback_query(call.id)
-
+    try:
+        bot.answer_callback_query(call.id)
+    except Exception as e:
+        logger.warning(f"Callback expired in handle_command_callback: {e}")
 
 @bot.message_handler(commands=['start'])
 def start_command(message):
@@ -110,7 +122,7 @@ def show_second_menu(chat_id):
     markup.add(btn_set_id, btn_change_appointment)
     bot.send_message(
         chat_id,
-        "🤖 <b>Главное меню</b>\n\n",
+        "<b>Главное меню</b>\n\n",
         parse_mode='HTML',
         reply_markup=markup
     )
@@ -125,17 +137,21 @@ def sign_up(message):
     min_date = date.today()
     max_date = min_date + timedelta(days=14)
     calendar, step = MyTranslationCalendar(min_date=min_date, max_date=max_date, locale='ru').build()
-    bot.send_message(user_data['chat_id'], f"<b>Заявку можно будет изменить в конце</b>\nВыберите дату \n<b><u>(сб, вс - нерабочие дни)</u></b>",
+    bot.send_message(user_data['chat_id'], f"<b>Заявку можно будет изменить в конце</b>\nВыберите предпочтительную дату, возможно, окончательная дата будет иной \n<b><u>(сб, вс - нерабочие дни)</u></b>",
                      parse_mode='HTML', reply_markup=calendar)
 
 
-@bot.callback_query_handler(func=MyTranslationCalendar.func())
-def handle_calendar(call):
-    bot.answer_callback_query(call.id)
+@bot.callback_query_handler(func=lambda call: call.data.startswith('my_0'))
+def handle_appointment_calendar(call):
+    try:
+        bot.answer_callback_query(call.id)
+    except Exception as e:
+        logger.warning(f"Callback expired in handle_appointment_calendar: {e}")
     user_id = call.from_user.id
     user_data = get_user_data(user_id)
     min_date = date.today()
     max_date = min_date + timedelta(days=14)
+
     result, key, step = MyTranslationCalendar(min_date=min_date, max_date=max_date, locale='ru').process(call.data)
 
     if not result and key:
@@ -143,24 +159,21 @@ def handle_calendar(call):
     elif result:
         if result.weekday() >= 5:
             bot.send_message(user_data['chat_id'], 'Суббота и воскресенье - нерабочие дни, выберите другой день')
-            bot.register_next_step_handler(call.message, sign_up)
-            return None
+            return
+
         user_data['appointment']['date'] = str(result)
         bot.edit_message_text(f"Вы выбрали: {result}", user_data['chat_id'], call.message.message_id)
 
-        # Проверяем, находится ли пользователь в режиме редактирования
-
-        # В режиме создания новой заявки - продолжаем запрашивать время
         db = Table()
         times = db.check_day(date=user_data['appointment']['date'])
         markup = InlineKeyboardMarkup(row_width=1)
+
         for time, status in times.items():
             if status:
-                btn_time = InlineKeyboardButton(text=f"{time}:00",
-                                                callback_data=f'time!{time}')  # ЗДЕСЬ ВЫЗЫВВАЕТСЯ handle_time
+                btn_time = InlineKeyboardButton(text=f"{time}:00", callback_data=f'time!{time}')
                 markup.add(btn_time)
 
-        if len(times) != 0:
+        if times:
             bot.send_message(call.message.chat.id, f"Выберите время", reply_markup=markup)
         else:
             bot.send_message(call.message.chat.id, f"В этот день нет свободных дат, пожалуйста, выберите другую дату")
@@ -170,7 +183,10 @@ def handle_calendar(call):
 # ВРЕМЯ
 @bot.callback_query_handler(func=lambda call: call.data.startswith('time!'))
 def handle_time(call):
-    bot.answer_callback_query(call.id)
+    try:
+        bot.answer_callback_query(call.id)
+    except Exception as e:
+        logger.warning(f"Callback expired in handle time: {e}")
     try:
         data = call.data.split('!')
         time_val = int(data[1])
@@ -189,7 +205,7 @@ def handle_time(call):
         if user_data['is_editing']:
             confirm(user_id)
         else:
-            msg = bot.send_message(call.message.chat.id, "Введите номер марку и модель автомобиля")
+            msg = bot.send_message(call.message.chat.id, "Введите номер, марку и модель автомобиля")
             bot.register_next_step_handler(msg, set_model)
 
     except Exception as e:
@@ -221,7 +237,7 @@ def change_time(message):
 def set_model(message):
     user_id = message.from_user.id
     user_data = get_user_data(user_id)
-    user_data['appointment']['phone'] = message.text
+    user_data['appointment']['model'] = message.text
     markup = InlineKeyboardMarkup(row_width=1)
     markup.add(InlineKeyboardButton(text="Пропустить",
                                     callback_data='skip_vin'))
@@ -234,14 +250,14 @@ def change_model(message):
     user_data = get_user_data(user_id)
     user_data['is_editing'] = True  # Устанавливаем флаг редактирования
 
-    bot.send_message(user_data['chat_id'], "Введите марку и модель:")
+    bot.send_message(user_data['chat_id'], "Введите номер, марку и модель:")
     bot.register_next_step_handler(message, update_phone)
 
 
 def update_model(message):
     user_id = message.from_user.id
     user_data = get_user_data(user_id)
-    user_data['appointment']['phone'] = message.text
+    user_data['appointment']['model'] = message.text
     bot.send_message(user_data['chat_id'], "✅ Информация обновлена обновлена")
     confirm(user_id)
 # МАРКА МОДЕЛЬ
@@ -250,8 +266,10 @@ def update_model(message):
 # VIN
 @bot.callback_query_handler(func=lambda call: call.data == 'skip_vin')
 def skip_vin(call):
-    bot.answer_callback_query(call.id)
-
+    try:
+        bot.answer_callback_query(call.id)
+    except Exception as e:
+        logger.warning(f"Callback expired in skip_vin: {e}")
     try:
         user_id = call.from_user.id
         user_data = get_user_data(user_id)
@@ -271,9 +289,10 @@ def skip_vin(call):
             markup.add(InlineKeyboardButton(text='Подвеска', callback_data='type:podv'))
             markup.add(InlineKeyboardButton(text='Двигатель', callback_data='type:dvig'))
             markup.add(InlineKeyboardButton(text='Шиномонтаж', callback_data='type:shinomontazh'))
+            markup.add(InlineKeyboardButton(text='Не знаю', callback_data='type:idk'))
             msg = bot.send_message(
                 call.message.chat.id,
-                "Выберите тип проблемы, с которой вы обращаетесь, или опишите ее",
+                "Выберите тип проблемы, с которой вы обращаетесь",
                 reply_markup=markup
             )
             bot.register_next_step_handler(msg, type_of_problem)
@@ -294,13 +313,14 @@ def set_vin(message):
             markup.add(InlineKeyboardButton(text='Подвеска', callback_data='type:podv'))
             markup.add(InlineKeyboardButton(text='Двигатель', callback_data='type:dvig'))
             markup.add(InlineKeyboardButton(text='Шиномонтаж', callback_data='type:shinomontazh'))
+            markup.add(InlineKeyboardButton(text='Не знаю', callback_data='type:idk'))
+
             # markup.add(InlineKeyboardButton(text='Не знаю', callback_data='type:nothing'))
             msg = bot.send_message(
                 message.chat.id,
                 "Выберите тип проблемы, с которой вы обращаетесь",
                 reply_markup=markup #, или опишите ее"
             )
-            bot.register_next_step_handler(msg, type_of_problem)
 
     except Exception as e:
         print(f"Error in set_vin: {e}")
@@ -316,7 +336,7 @@ def type_of_problem(call):
         logger.warning(f"Callback query expired: {e}")  # Исправлено
     user_id = call.from_user.id
     user_data = get_user_data(user_id)
-    bot.answer_callback_query(call.id)
+    print(call.data, call.message, sep='\n')
     data = call.data.split(':')
     match data[1]:
         case 'electr':
@@ -327,8 +347,8 @@ def type_of_problem(call):
             user_data['appointment']['problem_type'] = "Двигатель"
         case 'shinomontazh':
             user_data['appointment']['problem_type'] = "Шиномонтаж"
-        case 'nothing':
-            user_data['appointment']['problem_type'] = "-"
+        case 'idk':
+            user_data['appointment']['problem_type'] = "Не знаю"
     bot.edit_message_reply_markup(
         chat_id=call.message.chat.id,
         message_id=call.message.message_id,
@@ -337,6 +357,7 @@ def type_of_problem(call):
 
     msg = bot.send_message(call.message.chat.id, 'Опишите проблему')  # Исправлено: call.message.chat.id
     bot.register_next_step_handler(msg, set_problem)
+    return 1
 
 
 def change_vin(message):
@@ -380,10 +401,12 @@ def set_problem(message):
 
 @bot.callback_query_handler(func=lambda call: call.data.startswith('upd_type:'))
 def upd_type_of_problem(call):
-    bot.callback_query_handler(call.id)
+    try:
+        bot.answer_callback_query(call.id)
+    except Exception as e:
+        logger.warning(f"Callback expired in skip_vin: {e}")
     user_id = call.from_user.id
     user_data = get_user_data(user_id)
-    bot.answer_callback_query(call.id)
     data = call.data.split(':')
     match data[1]:
         case 'electr':
@@ -396,7 +419,7 @@ def upd_type_of_problem(call):
             user_data['appointment']['problem_type'] = "Двигатель"
         case 'nothing':
             user_data['appointment']['problem_type'] = "-"
-    bot.send_message(user_id, text='Опишите проблему')
+    bot.send_message(user_data['chat_id'], text='Опишите проблему')
     bot.register_next_step_handler(call.message, update_problem)
 
 def change_problem(message):
@@ -425,7 +448,10 @@ def update_problem(message):
 # ЗАПЧАСТИ
 @bot.callback_query_handler(func=lambda call: call.data.startswith('set_parts:'))
 def handle_set_parts(call):
-    bot.answer_callback_query(call.id)
+    try:
+        bot.answer_callback_query(call.id)
+    except Exception as e:
+        logger.warning(f"Callback expired in skip_vin: {e}")
     data = call.data.split(':')
     bot.edit_message_reply_markup(
         chat_id=call.message.chat.id,
@@ -462,7 +488,10 @@ def change_parts(message):
 
 @bot.callback_query_handler(func=lambda call: call.data.startswith('update_parts:'))
 def handle_update_parts(call):
-    bot.answer_callback_query(call.id)
+    try:
+        bot.answer_callback_query(call.id)
+    except Exception as e:
+        logger.warning(f"Callback expired in skip_vin: {e}")
     data = call.data.split(':')
     match data[1]:
         case 'yes':
@@ -557,13 +586,15 @@ def change_appointment(message):
 
 
 def cancel_changes(call):
-    bot.answer_callback_query(call.id)
+    try:
+        bot.answer_callback_query(call.id)
+    except Exception as e:
+        logger.warning(f"Callback expired in skip_vin: {e}")
     user_id = call.from_user.id
     user_data = get_user_data(user_id)
 
     bot.send_message(user_data['chat_id'], "❌ Изменения отменены")
     show_second_menu(user_data['chat_id'])
-    bot.answer_callback_query(call.id)
 
 
 def confirm(user_id):
@@ -574,7 +605,7 @@ def confirm(user_id):
     summary += f"📅 Дата: {appointment.get('date', 'не указана')}\n"
     summary += f"⏰ Время: {appointment.get('time', 'не указано')}\n"
     summary += f"🚗 VIN: {appointment.get('vin', 'не указан')}\n"
-    summary += f"🔧 Проблема: {appointment.get('problem_type', 'не указана')} {appointment.get('problem', 'не указана')}\n"
+    summary += f"🔧 Проблема: {appointment.get('problem_type', 'не указана')} | {appointment.get('problem', 'не указана')}\n"
     summary += f"📦 Нужны запчасти: {appointment.get('parts', 'не указано')}\n"
     summary += f"    Номер: {user_data['appointment']['phone']}"
 
@@ -593,7 +624,10 @@ def confirm(user_id):
 # ПОДТВЕРЖДЕНИЕ
 @bot.callback_query_handler(func=lambda call: call.data.startswith('confirm_yes'))
 def handle_confirmation(call):
-    bot.answer_callback_query(call.id)
+    try:
+        bot.answer_callback_query(call.id)
+    except Exception as e:
+        logger.warning(f"Callback expired in skip_vin: {e}")
     user_id = call.from_user.id
     user_data = get_user_data(user_id)
 
@@ -604,9 +638,10 @@ def handle_confirmation(call):
     summary = (
         f"📅 Дата: {user_data['appointment']['date']}\n"
         f"🕒 Время: {user_data['appointment']['time']}\n"
+        f"🕒 Время: {user_data['appointment']['model']}\n"
         f"🔢 VIN: {user_data['appointment']['vin']}\n"
         f"⚙️ Подобрать запчасти: {user_data['appointment']['parts']}\n"
-        f"🛠️ Проблема: {user_data['appointment']['problem']}\n"
+        f"🛠️ Проблема:{user_data['appointment']['problem_type']} | {user_data['appointment']['problem']}\n"
         f"    Номер: {user_data['appointment']['phone']}"
 
     )
@@ -623,7 +658,8 @@ def send_to_other_chat(user, target_chat_id, summary, vin):
     markup = InlineKeyboardMarkup()
     markup.add(
         InlineKeyboardButton("✅ Принять", callback_data=f'accepted:{user.id}'),
-        InlineKeyboardButton("❌ Отклонить", callback_data=f'declined:{user.id}')
+        InlineKeyboardButton("❌ Отклонить", callback_data=f'declined:{user.id}'),
+        InlineKeyboardButton("записи на эту дату", callback_data=f'zapisi')
     )
     msg = (
         f"Username: @{user.username or 'нет'}\n"
@@ -636,7 +672,10 @@ def send_to_other_chat(user, target_chat_id, summary, vin):
 
 @bot.callback_query_handler(func=lambda call: call.data.startswith(('accepted:', 'declined:')))
 def handle_decision(call):
-    bot.answer_callback_query(call.id)
+    try:
+        bot.answer_callback_query(call.id)
+    except Exception as e:
+        logger.warning(f"Callback expired in skip_vin: {e}")
     data = call.data.split(':')
     action, target_user_id = data[0], data[1]
     moderator = call.from_user
@@ -658,10 +697,12 @@ def handle_decision(call):
             user_data['appointment']['date'],
             user_data['appointment']['time'][:2],
             target_user_id,
-            user_data['appointment']['problem'],
+            user_data['appointment']['problem_type']+'|'+user_data['appointment']['problem'],
             user_data['appointment']['vin'],
             user_data['appointment']['parts'],
-            1
+            1,
+            user_data['appointment']['model']
+
         ])
 
     bot.edit_message_text(
@@ -669,10 +710,52 @@ def handle_decision(call):
         message_id=call.message.message_id,
         text=edited_text
     )
-    bot.answer_callback_query(call.id)
 
 
 # ПОДТВЕРЖДЕНИЕ
+
+
+@bot.callback_query_handler(func=lambda call: call.data.startswith('zapisi'))
+def zapisi(call):
+    user_id = call.from_user.id
+    user_data = get_user_data(user_id)
+    min_date = date.today()
+    max_date = min_date + timedelta(days=14)
+    calendar, step = WMonthTelegramCalendar(min_date=min_date, max_date=max_date, locale='ru').build()
+    bot.send_message(GROUP_CHAT_ID, f"Выберите дату",
+                     parse_mode='HTML', reply_markup=calendar)
+
+
+@bot.callback_query_handler(func=lambda call: call.data.startswith('cbcal_0'))
+def handle_view_calendar(call):
+    try:
+        bot.answer_callback_query(call.id)
+    except Exception as e:
+        logger.warning(f"Callback expired in skip_vin: {e}")
+    min_date = date.today()
+    max_date = min_date + timedelta(days=14)
+
+    result, key, step = WMonthTelegramCalendar(min_date=min_date, max_date=max_date, locale='ru').process(call.data)
+
+    if not result and key:
+        bot.edit_message_text(f"Выберите дату для просмотра записей",
+                              call.message.chat.id, call.message.message_id, reply_markup=key)
+    elif result:
+        db = Table()
+        appointments = db.appointments_by_date(str(result))
+        mechs = {'1': 'Саша',
+                 '2': 'Денис'}
+        if not appointments:
+            text = 'На эту дату нет записей'
+        else:
+            text = f"📅 Записи на {result}:\n\n"
+            for time, problem, mechanic in appointments:
+                text += f"🕒 {time}:00 - {problem}"
+                if mechanic:
+                    text += f", механик: {mechs[mechanic]}"
+                text += "\n"
+
+        bot.edit_message_text(text, call.message.chat.id, call.message.message_id)
 
 
 if __name__ == '__main__':
