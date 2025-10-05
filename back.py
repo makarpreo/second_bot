@@ -129,6 +129,7 @@ def handle_date_for_mechs_workload_calendar(call):
         bot.edit_message_text(f"Вы выбрали: {result}", user_data['chat_id'], call.message.message_id)
         db = Table()
         res = db.appointments_by_date(str(result))
+        print(res)
         text = ''
         if not res:
             text = 'На эту дату нет записей'
@@ -182,7 +183,7 @@ def choose_appointment(call):
         text = 'Нет записей'
     else:
         for id, date, time, problem in res:
-            text = f"{date[-2] + date[-1] + '.' + date[5] + date[6]} {time}:00 - {problem}"
+            text = f"{date} {time}:00 - {problem}" #date[-2] + date[-1] + '.' + date[5] + date[6]
             markup.add(InlineKeyboardButton(text=text, callback_data=f'app:{id}'))
     text = f"Выберите запись"
     bot.send_message(chat_id=user_data['chat_id'],

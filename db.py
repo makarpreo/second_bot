@@ -105,7 +105,11 @@ class Table:
                 if result and result1 else f'Ошибка')
 
     def change_column_by_id(self, id, column_name, data):
-        query = f'UPDATE main SET {column_name} = %s where id = %s'
+        # Добавить валидацию имени колонки
+        allowed_columns = ['date', 'time', 'problem', 'mechanic', 'status', 'confirmed', 'duration', 'lift']
+        if column_name not in allowed_columns:
+            raise ValueError(f"Недопустимое имя колонки: {column_name}")
+        query = 'UPDATE main SET {} = %s WHERE id = %s'.format(column_name)
         result = self.execute_query(query, (data, id,))
         return (f"поле изменено"
                 if result else f'Ошибка')
@@ -117,7 +121,7 @@ class Table:
         return result
 
     def appointments_by_date(self, date):
-        query = 'SELECT time, problem, mechanic, duration, lift FROM second.main WHERE date = %s and status <> 0 ORDER BY time;'
+        query = 'SELECT time, problem, mechanic, duration, lift FROM second.main WHERE date = %s ORDER BY time;'
         result = self.execute_query(query, (date,), fetch=True)
         return result
 
@@ -130,6 +134,59 @@ class Table:
         query = 'SELECT time, problem, mechanic FROM second.main WHERE mechanic = %s;'
         result = self.execute_query(query, fetch=True)
         return result
+
+    def get_workload_by_date(self, target_date):
+        """
+        Проверяет загруженность на конкретную дату по часам (с 10 до 18)
+        Возвращает словарь вида {'10': 3, '11': 2, '12': 3, '13': 0, ...}
+        где значения: 0 - нет данных, 1 - низкая, 2 - средняя, 3 - высокая загруженность
+        """
+        query = '''
+        SELECT time, duration 
+        FROM main 
+        WHERE date = %s AND time IS NOT NULL AND duration IS NOT NULL;
+        '''
+
+        results = self.execute_query(query, (target_date,), fetch=True)
+
+        # Инициализируем словарь только для рабочих часов (10-18)
+        workload = {str(hour).zfill(2): 0 for hour in range(10, 19)}
+
+        # Словарь для подсчета количества записей по часам (только 10-18)
+        hour_count = {str(hour).zfill(2): 0 for hour in range(10, 19)}
+
+        # Обрабатываем результаты запроса
+        for result in results:
+            time_str = str(result[0]).zfill(2)  # Время в формате '10', '17' и т.д.
+            duration = result[1] or 0  # Продолжительность, если NULL то 0
+
+            # Преобразуем время в число
+            try:
+                start_hour = int(time_str)
+            except (ValueError, TypeError):
+                continue
+
+            # Учитываем продолжительность работы только в пределах рабочего дня (10-18)
+            for hour_offset in range(duration):
+                current_hour = start_hour + hour_offset
+                hour_key = str(current_hour).zfill(2)
+
+                # Учитываем только часы с 10 до 18 включительно
+                if hour_key in hour_count:
+                    hour_count[hour_key] += 1
+
+        # Определяем уровень загруженности для каждого часа
+        for hour, count in hour_count.items():
+            if count == 0:
+                workload[hour] = 0  # Нет записей
+            elif count == 1:
+                workload[hour] = 1  # Низкая загруженность
+            elif count == 2:
+                workload[hour] = 2  # Средняя загруженность
+            else:
+                workload[hour] = 3  # Высокая загруженность
+
+        return workload
 
 
 class Appointment(Table):

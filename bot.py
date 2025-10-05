@@ -165,16 +165,24 @@ def handle_appointment_calendar(call):
         bot.edit_message_text(f"Вы выбрали: {result}", user_data['chat_id'], call.message.message_id)
 
         db = Table()
-        times = db.check_day(date=user_data['appointment']['date'])
+        times = db.get_workload_by_date(target_date=user_data['appointment']['date'])
         markup = InlineKeyboardMarkup(row_width=1)
-
         for time, status in times.items():
-            if status:
-                btn_time = InlineKeyboardButton(text=f"{time}:00", callback_data=f'time!{time}')
+            if status == 0:
+                btn_time = InlineKeyboardButton(text=f"{time}:00 🟩", callback_data=f'time!{time}')
+                markup.add(btn_time)
+            if status == 1:
+                btn_time = InlineKeyboardButton(text=f"{time}:00 🟨", callback_data=f'time!{time}')
+                markup.add(btn_time)
+            if status == 2:
+                btn_time = InlineKeyboardButton(text=f"{time}:00 🟧", callback_data=f'time!{time}')
+                markup.add(btn_time)
+            if status == 3:
+                btn_time = InlineKeyboardButton(text=f"{time}:00 🟥", callback_data=f'time!{time}')
                 markup.add(btn_time)
 
         if times:
-            bot.send_message(call.message.chat.id, f"Выберите время", reply_markup=markup)
+            bot.send_message(call.message.chat.id, f"Выберите предпочтительное время, возможно, окончательное время измениться\n🟩-низкая загруженность🟨-средняя🟧-высокая🟥-полная", reply_markup=markup)
         else:
             bot.send_message(call.message.chat.id, f"В этот день нет свободных дат, пожалуйста, выберите другую дату")
             sign_up(call.message)
@@ -336,7 +344,6 @@ def type_of_problem(call):
         logger.warning(f"Callback query expired: {e}")  # Исправлено
     user_id = call.from_user.id
     user_data = get_user_data(user_id)
-    print(call.data, call.message, sep='\n')
     data = call.data.split(':')
     match data[1]:
         case 'electr':
@@ -635,20 +642,26 @@ def handle_confirmation(call):
         bot.answer_callback_query(call.id, "Ошибка: данные не найдены!")
         return
 
+    # Редактируем существующее сообщение вместо отправки нового
+    bot.edit_message_text(
+        chat_id=call.message.chat.id,
+        message_id=call.message.message_id,
+        text=call.message.text + "\n\n✅ Ваша заявка отправлена",
+        reply_markup=None  # Убираем все кнопки
+    )
+
     summary = (
         f"📅 Дата: {user_data['appointment']['date']}\n"
         f"🕒 Время: {user_data['appointment']['time']}\n"
-        f"🕒 Время: {user_data['appointment']['model']}\n"
+        f"🚗 Модель: {user_data['appointment']['model']}\n"
         f"🔢 VIN: {user_data['appointment']['vin']}\n"
         f"⚙️ Подобрать запчасти: {user_data['appointment']['parts']}\n"
         f"🛠️ Проблема:{user_data['appointment']['problem_type']} | {user_data['appointment']['problem']}\n"
-        f"    Номер: {user_data['appointment']['phone']}"
-
+        f"📞 Номер: {user_data['appointment']['phone']}"
     )
 
-    bot.send_message(user_data['chat_id'], "✅ Ваша заявка отправлена")
+    user_data['last_message'] = call
     send_to_other_chat(call.from_user, GROUP_CHAT_ID, summary, user_data['appointment']['vin'])
-    bot.answer_callback_query(call.id, "Заявка отправлена!")
 
 
 def send_to_other_chat(user, target_chat_id, summary, vin):
