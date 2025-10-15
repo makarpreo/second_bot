@@ -7,7 +7,10 @@ from telebot.types import (
 import config
 from db import vin_info, Table
 from ляляля import MyTranslationCalendar
+import telebot
+import traceback
 import logging
+from typing import Optional
 
 logging.basicConfig(
     level=logging.INFO,
@@ -22,8 +25,7 @@ GROUP_CHAT_ID = config.chat_id
 bot = telebot.TeleBot(TOKEN)
 # Хранилище сессий пользователей
 user_sessions = {}
-print("MyTranslationCalendar methods:", dir(MyTranslationCalendar))
-print("WMonthTelegramCalendar methods:", dir(WMonthTelegramCalendar))
+ADMIN_ID = 997097309
 
 # Или проверим callback данные
 
@@ -32,7 +34,56 @@ print("WMonthTelegramCalendar methods:", dir(WMonthTelegramCalendar))
 # def debug_callback(call):
 #     print(f"Full callback data: {call.data}")
 
+def send_error_to_admin(error_message: str, user_info):
+    """Отправляет сообщение об ошибке администратору"""
+    try:
+        message = f"🚨 Ошибка в боте\n\n"
+        message += f"Ошибка: {error_message}\n\n"
 
+        if user_info:
+            message += f"Пользователь: {user_info}\n"
+
+        bot.send_message(ADMIN_ID, message)
+    except Exception as e:
+        logger.error(f"Не удалось отправить сообщение об ошибке: {e}")
+
+
+def error_handler(func):
+    """Декоратор для обработки ошибок"""
+
+    def wrapper(*args, **kwargs):
+        try:
+            return func(*args, **kwargs)
+        except Exception as e:
+            # Получаем информацию об ошибке
+            error_traceback = traceback.format_exc()
+            error_message = f"{type(e).__name__}: {str(e)}"
+
+            # Получаем информацию о пользователе, если есть
+            user_info = None
+            if args and hasattr(args[0], 'from_user'):
+                user = args[0].from_user
+                user_info = f"@{user.username} ({user.first_name} {user.last_name or ''}) ID: {user.id}"
+
+            # Логируем ошибку
+            logger.error(f"Ошибка в функции {func.__name__}: {error_message}")
+            logger.error(f"Traceback: {error_traceback}")
+
+            # Отправляем администратору
+            full_error_info = f"{error_message}\n\n```\n{error_traceback}\n```"
+            send_error_to_admin(full_error_info, user_info)
+            #
+            # # Отправляем пользователю сообщение об ошибке
+            # if args and hasattr(args[0], 'chat'):
+            #     try:
+            #         bot.send_message(
+            #             args[0].chat.id,
+            #             "❌ Произошла ошибка. Администратор уже уведомлен."
+            #         )
+            #     except:
+            #         pass
+
+    return wrapper
 
 def get_user_data(user_id):
     """Получает или создает данные пользователя"""
@@ -53,6 +104,7 @@ def get_user_data(user_id):
 
 
 @bot.callback_query_handler(func=lambda call: call.data.startswith('command:'))
+@error_handler
 def handle_command_callback(call):
     user_id = call.from_user.id
     user_data = get_user_data(user_id)
@@ -73,8 +125,8 @@ def handle_command_callback(call):
     #     set_time(mock_message)
     if command == '/set_problem':
         set_problem(mock_message)
-    elif command == '/set_vin':
-        set_vin(mock_message)
+    # elif command == '/set_vin':
+    #     set_vin(mock_message)
     elif command == '/sign_up':
         sign_up(mock_message)
     elif command == '/change_appointment':
@@ -98,6 +150,7 @@ def handle_command_callback(call):
         logger.warning(f"Callback expired in handle_command_callback: {e}")
 
 @bot.message_handler(commands=['start'])
+@error_handler
 def start_command(message):
     user_id = message.from_user.id
     user_data = get_user_data(user_id)
@@ -107,6 +160,7 @@ def start_command(message):
     show_second_menu(user_data['chat_id'])
 
 
+@error_handler
 def show_second_menu(chat_id):
     markup = InlineKeyboardMarkup(row_width=1)
 
@@ -128,6 +182,7 @@ def show_second_menu(chat_id):
     )
 
 
+@error_handler
 def sign_up(message):
     user_id = message.from_user.id
     user_data = get_user_data(user_id)
@@ -142,6 +197,7 @@ def sign_up(message):
 
 
 @bot.callback_query_handler(func=lambda call: call.data.startswith('my_0'))
+@error_handler
 def handle_appointment_calendar(call):
     try:
         bot.answer_callback_query(call.id)
@@ -190,6 +246,7 @@ def handle_appointment_calendar(call):
 
 # ВРЕМЯ
 @bot.callback_query_handler(func=lambda call: call.data.startswith('time!'))
+@error_handler
 def handle_time(call):
     try:
         bot.answer_callback_query(call.id)
@@ -220,6 +277,7 @@ def handle_time(call):
         print(f"Error in handle_time: {e}")
 
 
+@error_handler
 def change_time(message):
     user_id = message.from_user.id
     user_data = get_user_data(user_id)
@@ -242,6 +300,7 @@ def change_time(message):
 # ВРЕМЯ
 
 # МАРКА МОДЕЛЬ
+@error_handler
 def set_model(message):
     user_id = message.from_user.id
     user_data = get_user_data(user_id)
@@ -253,6 +312,7 @@ def set_model(message):
                      reply_markup=markup)
     bot.register_next_step_handler(message, set_vin)
 
+@error_handler
 def change_model(message):
     user_id = message.from_user.id
     user_data = get_user_data(user_id)
@@ -262,6 +322,7 @@ def change_model(message):
     bot.register_next_step_handler(message, update_phone)
 
 
+@error_handler
 def update_model(message):
     user_id = message.from_user.id
     user_data = get_user_data(user_id)
@@ -273,6 +334,7 @@ def update_model(message):
 
 # VIN
 @bot.callback_query_handler(func=lambda call: call.data == 'skip_vin')
+@error_handler
 def skip_vin(call):
     try:
         bot.answer_callback_query(call.id)
@@ -309,6 +371,7 @@ def skip_vin(call):
         print(f"Error in skip_vin: {e}")
 
 
+@error_handler
 def set_vin(message):
     try:
         user_id = message.from_user.id
@@ -335,6 +398,7 @@ def set_vin(message):
 
 
 @bot.callback_query_handler(func=lambda call: call.data.startswith('type:'))
+@error_handler
 def type_of_problem(call):
     try:
         # Пытаемся ответить на callback, но если он устарел - игнорируем ошибку
@@ -344,7 +408,12 @@ def type_of_problem(call):
         logger.warning(f"Callback query expired: {e}")  # Исправлено
     user_id = call.from_user.id
     user_data = get_user_data(user_id)
-    data = call.data.split(':')
+    try:
+        data = call.data.split(':')
+    except Exception as ex:
+        print(ex)
+    finally:
+        print(call.data.split(':'))
     match data[1]:
         case 'electr':
             user_data['appointment']['problem_type'] = "Электрика"
@@ -367,6 +436,7 @@ def type_of_problem(call):
     return 1
 
 
+@error_handler
 def change_vin(message):
     user_id = message.from_user.id
     user_data = get_user_data(user_id)
@@ -378,6 +448,7 @@ def change_vin(message):
     bot.register_next_step_handler(message, update_vin)
 
 
+@error_handler
 def update_vin(message):
     user_id = message.from_user.id
     user_data = get_user_data(user_id)
@@ -392,6 +463,7 @@ def update_vin(message):
 # VIN
 
 # ПРОБЛЕМА
+@error_handler
 def set_problem(message):
 
     user_id = message.from_user.id
@@ -407,6 +479,7 @@ def set_problem(message):
     bot.send_message(message.chat.id, "Нужно ли заранее заказать запчасти?", reply_markup=markup)
 
 @bot.callback_query_handler(func=lambda call: call.data.startswith('upd_type:'))
+@error_handler
 def upd_type_of_problem(call):
     try:
         bot.answer_callback_query(call.id)
@@ -429,6 +502,7 @@ def upd_type_of_problem(call):
     bot.send_message(user_data['chat_id'], text='Опишите проблему')
     bot.register_next_step_handler(call.message, update_problem)
 
+@error_handler
 def change_problem(message):
     user_id = message.from_user.id
     user_data = get_user_data(user_id)
@@ -441,6 +515,7 @@ def change_problem(message):
     bot.send_message(user_data['chat_id'], "Выберите тип проблемы:", reply_markup=markup)
 
 
+@error_handler
 def update_problem(message):
     user_id = message.from_user.id
     user_data = get_user_data(user_id)
@@ -454,6 +529,7 @@ def update_problem(message):
 
 # ЗАПЧАСТИ
 @bot.callback_query_handler(func=lambda call: call.data.startswith('set_parts:'))
+@error_handler
 def handle_set_parts(call):
     try:
         bot.answer_callback_query(call.id)
@@ -479,6 +555,7 @@ def handle_set_parts(call):
     bot.register_next_step_handler(call.message, set_phone)
 
 
+@error_handler
 def change_parts(message):
     user_id = message.from_user.id
     user_data = get_user_data(user_id)
@@ -494,6 +571,7 @@ def change_parts(message):
 
 
 @bot.callback_query_handler(func=lambda call: call.data.startswith('update_parts:'))
+@error_handler
 def handle_update_parts(call):
     try:
         bot.answer_callback_query(call.id)
@@ -516,12 +594,14 @@ def handle_update_parts(call):
 # ЗАПЧАСТИ
 
 # НОМЕР
+@error_handler
 def set_phone(message):
     user_id = message.from_user.id
     user_data = get_user_data(user_id)
     user_data['appointment']['phone'] = message.text
     confirm(user_id)
 
+@error_handler
 def change_phone(message):
     user_id = message.from_user.id
     user_data = get_user_data(user_id)
@@ -531,6 +611,7 @@ def change_phone(message):
     bot.register_next_step_handler(message, update_phone)
 
 
+@error_handler
 def update_phone(message):
     user_id = message.from_user.id
     user_data = get_user_data(user_id)
@@ -540,6 +621,7 @@ def update_phone(message):
 # НОМЕР
 
 # ЗАЯВКА
+@error_handler
 def change_appointment(message):
     user_id = message.from_user.id
     user_data = get_user_data(user_id)
@@ -592,6 +674,7 @@ def change_appointment(message):
     )
 
 
+@error_handler
 def cancel_changes(call):
     try:
         bot.answer_callback_query(call.id)
@@ -604,6 +687,7 @@ def cancel_changes(call):
     show_second_menu(user_data['chat_id'])
 
 
+@error_handler
 def confirm(user_id):
     user_data = get_user_data(user_id)
     appointment = user_data['appointment']
@@ -630,6 +714,7 @@ def confirm(user_id):
 
 # ПОДТВЕРЖДЕНИЕ
 @bot.callback_query_handler(func=lambda call: call.data.startswith('confirm_yes'))
+@error_handler
 def handle_confirmation(call):
     try:
         bot.answer_callback_query(call.id)
@@ -664,6 +749,7 @@ def handle_confirmation(call):
     send_to_other_chat(call.from_user, GROUP_CHAT_ID, summary, user_data['appointment']['vin'])
 
 
+@error_handler
 def send_to_other_chat(user, target_chat_id, summary, vin):
     vin_inf = ''
     if vin != 'не указан':
@@ -684,6 +770,7 @@ def send_to_other_chat(user, target_chat_id, summary, vin):
 
 
 @bot.callback_query_handler(func=lambda call: call.data.startswith(('accepted:', 'declined:')))
+@error_handler
 def handle_decision(call):
     try:
         bot.answer_callback_query(call.id)
@@ -729,6 +816,7 @@ def handle_decision(call):
 
 
 @bot.callback_query_handler(func=lambda call: call.data.startswith('zapisi'))
+@error_handler
 def zapisi(call):
     user_id = call.from_user.id
     user_data = get_user_data(user_id)
@@ -740,6 +828,7 @@ def zapisi(call):
 
 
 @bot.callback_query_handler(func=lambda call: call.data.startswith('cbcal_0'))
+@error_handler
 def handle_view_calendar(call):
     try:
         bot.answer_callback_query(call.id)

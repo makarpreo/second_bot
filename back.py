@@ -24,7 +24,28 @@ bot = telebot.TeleBot(TOKEN)
 # Хранилище сессий пользователей
 user_sessions = {}
 
+user_id_list = [5506674973, #макан
+                997097309, #макар
+                24260386,] #папа
+#                 1576118658, #саша солома
+#                 7645088510, #руслан
+#                 1497728313, #alexnader
+#                 1062205174] #денис
+def id_handler(func):
+    """Декоратор для обработки ошибок"""
+    def wrapper(*args, **kwargs):
+        user_info = None
+        if args[0] in user_id_list:
+            print('first if')
+            return func(*args, **kwargs)
+        if args and hasattr(args[0], 'from_user'):
+            user = args[0].from_user
+            print('second if')
+            if user.id in user_id_list:
+                return func(*args, **kwargs)
+    return wrapper
 
+@id_handler
 def get_user_data(user_id):
     """Получает или создает данные пользователя"""
     if user_id not in user_sessions:
@@ -42,6 +63,7 @@ def get_user_data(user_id):
 
 
 @bot.message_handler(commands=['start'])
+@id_handler
 def start_command(message):
     user_id = message.from_user.id
     user_data = get_user_data(user_id)
@@ -51,6 +73,7 @@ def start_command(message):
     show_second_menu(user_data['chat_id'])
 
 
+@id_handler
 def show_second_menu(chat_id):
     markup = InlineKeyboardMarkup(row_width=1)
 
@@ -78,6 +101,7 @@ def show_second_menu(chat_id):
 
 
 @bot.callback_query_handler(func=lambda call: call.data == 'today_appointments')
+@id_handler
 def today_appointments(call):
     user_id = call.from_user.id
     user_data = get_user_data(user_id)
@@ -102,6 +126,7 @@ def today_appointments(call):
                      text=text)
 
 @bot.callback_query_handler(func=lambda call: call.data == 'mechs_workload')
+@id_handler
 def choose_date_for_mechs_workload(call):
     user_id = call.from_user.id
     user_data = get_user_data(user_id)
@@ -114,6 +139,7 @@ def choose_date_for_mechs_workload(call):
 
 
 @bot.callback_query_handler(func=lambda call: call.data.startswith('cbcal_0'))
+@id_handler
 def handle_date_for_mechs_workload_calendar(call):
     bot.answer_callback_query(call.id)
     user_id = call.from_user.id
@@ -172,6 +198,7 @@ def handle_date_for_mechs_workload_calendar(call):
 #                      text=text)
 
 @bot.callback_query_handler(func=lambda call: call.data == 'choose_appointment')
+@id_handler
 def choose_appointment(call):
     user_id = call.from_user.id
     user_data = get_user_data(user_id)
@@ -191,6 +218,7 @@ def choose_appointment(call):
 
 
 @bot.callback_query_handler(func=lambda call: call.data.startswith('app:'))
+@id_handler
 def handle_choose_app(call):
     bot.answer_callback_query(call.id)
     user_id = call.from_user.id
@@ -222,6 +250,7 @@ def handle_choose_app(call):
 
 
 @bot.callback_query_handler(func=lambda call: call.data == 'delete')
+@id_handler
 def delete(call):
     bot.answer_callback_query(call.id)
     user_id = call.from_user.id
@@ -230,6 +259,7 @@ def delete(call):
                      f"Введите <code>Подтвердить</code> чтобы удалить запись", parse_mode='HTML')
     bot.register_next_step_handler(call.message, confrim_delete)
 
+@id_handler
 def confrim_delete(message):
     user_id = message.from_user.id
     user_data = get_user_data(user_id)
@@ -242,6 +272,7 @@ def confrim_delete(message):
         bot.send_message(message.chat.id, f'Вы отменили удаление записи:{user_data["current_app"]}')
 
 @bot.callback_query_handler(func=lambda call: call.data == 'date_time')
+@id_handler
 def date_time(message):
     user_id = message.from_user.id
     user_data = get_user_data(user_id)
@@ -254,6 +285,7 @@ def date_time(message):
 
 
 @bot.callback_query_handler(func=lambda call: call.data.startswith('my_0'))
+@id_handler
 def handle_appointment_calendar(call):
     bot.answer_callback_query(call.id)
     user_id = call.from_user.id
@@ -289,6 +321,7 @@ def handle_appointment_calendar(call):
 
 # ВРЕМЯ
 @bot.callback_query_handler(func=lambda call: call.data == 'duration')
+@id_handler
 def duration(call):
     bot.answer_callback_query(call.id)
     user_id = call.from_user.id
@@ -297,6 +330,7 @@ def duration(call):
     bot.register_next_step_handler(msg, duration_handler)
 
 
+@id_handler
 def duration_handler(message):
     user_id = message.from_user.id
     user_data = get_user_data(user_id)
@@ -309,6 +343,7 @@ def duration_handler(message):
 
 
 @bot.callback_query_handler(func=lambda call: call.data == 'probl')
+@id_handler
 def probl(call):
     bot.answer_callback_query(call.id)
     user_id = call.from_user.id
@@ -317,6 +352,7 @@ def probl(call):
     bot.register_next_step_handler(msg, probl_handler)
 
 
+@id_handler
 def probl_handler(message):
     user_id = message.from_user.id
     user_data = get_user_data(user_id)
@@ -328,6 +364,7 @@ def probl_handler(message):
 
 
 @bot.callback_query_handler(func=lambda call: call.data == 'mech')
+@id_handler
 def mech(call):
     bot.answer_callback_query(call.id)
     user_id = call.from_user.id
@@ -340,6 +377,7 @@ def mech(call):
 
 
 @bot.callback_query_handler(func=lambda call: call.data.startswith('mech:'))
+@id_handler
 def mech_handler(call):
     bot.answer_callback_query(call.id)
     user_id = call.from_user.id
@@ -353,6 +391,7 @@ def mech_handler(call):
 
 
 @bot.callback_query_handler(func=lambda call: call.data == 'lift')
+@id_handler
 def lift(call):
     bot.answer_callback_query(call.id)
     user_id = call.from_user.id
@@ -365,6 +404,7 @@ def lift(call):
 
 
 @bot.callback_query_handler(func=lambda call: call.data.startswith('lift:'))
+@id_handler
 def lift_handler(call):
     bot.answer_callback_query(call.id)
     user_id = call.from_user.id
@@ -379,6 +419,7 @@ def lift_handler(call):
 
 # ВРЕМЯ
 @bot.callback_query_handler(func=lambda call: call.data.startswith('time!'))
+@id_handler
 def handle_time(call):
     bot.answer_callback_query(call.id)
     data = call.data.split('!')
@@ -403,6 +444,7 @@ def handle_time(call):
 
 
 # Добавляем функцию для показа меню опций (аналогично handle_choose_app)
+@id_handler
 def show_options_menu(user_id, chat_id):
     """Показывает меню опций для выбранной записи (аналогично handle_choose_app)"""
     user_data = get_user_data(user_id)
