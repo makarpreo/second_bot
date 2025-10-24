@@ -100,9 +100,10 @@ class Table:
         print(data[0], data[1], data[2], data[3], data[5], data[6])
         query = f'INSERT INTO second.cars (model, VIN) VALUES (%s, %s)'
         result1 = self.execute_query(query, (data[7], data[4]))
-        print(data[4], data[7])
+        query = f'INSERT INTO user (user_id, phone, username) VALUES (%s, %s)'
+        result2 = self.execute_query(query, (data[2], data[8], data[9]))
         return (f"запись добавлена"
-                if result and result1 else f'Ошибка')
+                if result and result1 and result2 else f'Ошибка')
 
     def change_column_by_id(self, id, column_name, data):
         # Добавить валидацию имени колонки
@@ -197,7 +198,7 @@ class Appointment(Table):
 
     def change_date_time(self, time, date):
         query = 'UPDATE second.main SET date = %s, time = %s WHERE id = %s;'
-        result = self.execute_query(query, (date, time, self.id, ))
+        result = self.execute_query(query, (date, time, self.id,))
         return result, 'correct'
 
     def set_mechanic(self, mechanic):
@@ -233,15 +234,24 @@ class Appointment(Table):
 
     def info(self):
         query = 'SELECT date, time, problem, mechanic, duration, lift FROM main WHERE id = %s;'
-        result = self.execute_query(query, (self.id, ), fetch=True)
+        result = self.execute_query(query, (self.id,), fetch=True)
         return result
+
+    def info_by_user(self, user_id):
+        query = 'SELECT date, time, problem, mechanic, duration, lift, VIN FROM main WHERE user_id = %s ORDER BY id DESC LIMIT 1;' #phone, username,JOIN user using(user_id)
+        result = self.execute_query(query, (user_id,), fetch=True)
+        print(result)
+        date, time, problem, mechanic, duration, lift, vin = result[0]
+        return date, time, problem, mechanic, duration, lift, vin
+
 
 # Пример использования
 if __name__ == '__main__':
     table = Table()
+    ap = Appointment(0)
     # table.add(['test', 15, 'test', 'test', 'test', 'test', 'test'])
     # table.change_column_by_id(1, 'time', 14)
     # cars.print_note(7)
-    print(table.appointments_by_date('2025-09-24'))
+    print(ap.info_by_user(5506674973))
     # cars.show_active_list()
     print('success')

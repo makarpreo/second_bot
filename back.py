@@ -17,8 +17,8 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 # === CONFIGURATION ===
 
-TOKEN = config.TOKEN_SECOND
-GROUP_CHAT_ID = config.chat_id
+TOKEN = config.TEST_TOKEN2
+GROUP_CHAT_ID = config.test_chat_id
 
 bot = telebot.TeleBot(TOKEN)
 # Хранилище сессий пользователей
@@ -36,11 +36,11 @@ def id_handler(func):
     def wrapper(*args, **kwargs):
         user_info = None
         if args[0] in user_id_list:
-            print('first if')
+            # print('first if')
             return func(*args, **kwargs)
         if args and hasattr(args[0], 'from_user'):
             user = args[0].from_user
-            print('second if')
+            # print('second if')
             if user.id in user_id_list:
                 return func(*args, **kwargs)
     return wrapper
@@ -62,7 +62,7 @@ def get_user_data(user_id):
     return user_sessions[user_id]
 
 
-@bot.message_handler(commands=['start'])
+@bot.message_handler(commands=['1'])
 @id_handler
 def start_command(message):
     user_id = message.from_user.id
