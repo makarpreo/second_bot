@@ -101,7 +101,9 @@ def get_user_data(user_id):
             'appointment': {'problem': '', 'vin': '', 'parts': 0, 'time': '', 'date': '', 'problem_type': ''},
             'is_editing': False,  # Флаг для отслеживания режима редактирования
             'is_asked': False,
-            'is_skip': False
+            'is_skip': False,
+            'is_admin_mode': False,  # Флаг для режима админки
+            'current_app': 0  # Для админки
         }
     return user_sessions[user_id]
 
@@ -192,6 +194,7 @@ def sign_up(message):
     user_data = get_user_data(user_id)
     user_data['is_editing'] = False  # Сбрасываем флаг редактирования при новой записи
     user_data['is_asked'] = False  # Сбрасываем флаг редактирования при новой записи
+    user_data['is_admin_mode'] = False  # Сбрасываем флаг редактирования при новой записи
 
     min_date = date.today()
     max_date = min_date + timedelta(days=14)
@@ -276,7 +279,14 @@ def handle_time(call):
             text=f"2/7\nВремя: {time_val:02d}:00"
         )
 
-        if user_data['is_editing']:
+        # Проверяем режим работы
+        if user_data.get('is_admin_mode'):
+            # Режим админки - не продолжаем опрос
+            # user_data['is_admin_mode'] = False  # Сбрасываем флаг
+            at = Appointment(user_data['current_app'])
+            at.change_date_time(time=time_val, date=user_data['appointment']['date'])
+            show_options_menu(user_id, call.message.chat.id)
+        elif user_data['is_editing']:
             confirm(user_id)
         else:
             msg = bot.send_message(call.message.chat.id, "Введите номер, марку и модель автомобиля")
@@ -284,7 +294,6 @@ def handle_time(call):
 
     except Exception as e:
         print(f"Error in handle_time: {e}")
-
 
 @error_handler
 def change_time(message):
@@ -784,8 +793,8 @@ def confirm(user_id):
     markup = InlineKeyboardMarkup(row_width=2)
     confirm_btn = InlineKeyboardButton("✅ Подтвердить", callback_data="confirm_yes")
     change_btn = InlineKeyboardButton("✏️ Изменить заявку", callback_data="command:/change_appointment")
-    cancel_btn = InlineKeyboardButton("❌ Отменить", callback_data="confirm_no")
-    markup.add(confirm_btn, change_btn, cancel_btn)
+    # cancel_btn = InlineKeyboardButton("❌ Отменить", callback_data="confirm_no")
+    markup.add(confirm_btn, change_btn) #, cancel_bt
 
     bot.send_message(user_data['chat_id'], text, reply_markup=markup)
 
@@ -829,11 +838,11 @@ def handle_confirmation(call):
     )
 
     user_data['last_message'] = call
-    send_to_other_chat(call.from_user, GROUP_CHAT_ID, user_id)
+    send_to_other_chat(call.from_user.username, GROUP_CHAT_ID, user_id)
 
 
 @error_handler
-def send_to_other_chat(user, target_chat_id, user_id):
+def send_to_other_chat(username, target_chat_id, user_id):
     user_data = get_user_data(user_id)
     ap = Appointment(0)
     info = ap.info_by_user(user_id=user_id)
@@ -852,18 +861,25 @@ def send_to_other_chat(user, target_chat_id, user_id):
 
     markup = InlineKeyboardMarkup()
     markup.add(
-        InlineKeyboardButton("✅ Принять", callback_data=f'accepted:{user.id}'),
-        InlineKeyboardButton("❌ Отклонить", callback_data=f'declined:{user.id}'),
-        # InlineKeyboardButton("записи на эту дату", callback_data=f'zapisi')
-    )
+        InlineKeyboardButton("✅ Принять", callback_data=f'accepted:{user_id}'),
+        InlineKeyboardButton("❌ Отклонить", callback_data=f'declined:{user_id}'),
+    row_width=2)
+    markup.add(InlineKeyboardButton(" Обновить", callback_data=f'resend:{username}:{target_chat_id}:{user_id}'))
     msg = (
-        f"Username: @{user.username or 'нет'}\n"
-        f"ID: {user.id}\n\n"
+        f"Username: @{username or 'нет'}\n"
+        f"ID: {user_id}\n\n"
         f"\n{text}\n"
         f"Информация по VIN:\n {', '.join(vin_info(vin)) if vin else 'Не указан'}"
     )
     bot.send_message(target_chat_id, msg, reply_markup=markup)
 
+@bot.callback_query_handler(func=lambda call: call.data.startswith('resend:'))
+def resend(call):
+    data = call.data.split(':')
+    username = data[1]
+    target_chat_id = data[2]
+    user_id = data[3]
+    send_to_other_chat(username, target_chat_id, user_id)
 
 @bot.callback_query_handler(func=lambda call: call.data.startswith(('accepted:', 'declined:')))
 @error_handler
@@ -1017,6 +1033,7 @@ def start_command_back(message):
     username = message.from_user.username or message.from_user.first_name or f"user_{user_id}"
     user_data['username'] = username
     user_data['chat_id'] = message.chat.id
+    user_data['is_admin_mode'] = True
     show_back_menu(user_data['chat_id'])
 
 
@@ -1157,7 +1174,7 @@ def choose_appointment(call):
         text = 'Нет записей'
     else:
         for id, date, time, problem in res:
-            text = f"{date} {time}:00 - {problem}" #date[-2] + date[-1] + '.' + date[5] + date[6]
+            text = f"{date[-2] + date[-1] + '.' + date[5] + date[6] + '.' + date[:4]} {time}:00 - {problem}" #date[-2] + date[-1] + '.' + date[5] + date[6]
             markup.add(InlineKeyboardButton(text=text, callback_data=f'app:{id}'))
     text = f"Выберите запись"
     bot.send_message(chat_id=user_data['chat_id'],
@@ -1173,9 +1190,13 @@ def handle_choose_app(call):
     data = call.data.split(':')
     user_data['current_app'] = data[1]
     at = Appointment(data[1])
+    date_, time_, problem_, mechanic_, duration_, lift_, user_id_ = at.info()[0]
     markup = InlineKeyboardMarkup()
     markup.add(InlineKeyboardButton(text='Удалить запись', callback_data='delete'),)
-    date_, time_, problem_, mechanic_, duration_, lift_ = at.info()[0]
+    markup.add(
+        InlineKeyboardButton("✅ Принять", callback_data=f'accepted:{user_id_}'),
+        InlineKeyboardButton("❌ Отклонить", callback_data=f'declined:{user_id_}'),
+        row_width=2)
     text = 'Текущая запись:\n'
     text += f"{date_[-2] + date_[-1] + '.' + date_[5] + date_[6]}"
     text += f" {time_}:00\n{problem_}\n"
@@ -1252,6 +1273,9 @@ def handle_appointment_calendar_back(call):
         user_data['appointment']['date'] = str(result)
         bot.edit_message_text(f"Вы выбрали: {result}", user_data['chat_id'], call.message.message_id)
 
+        # Устанавливаем флаг, что это режим админки
+        user_data['is_admin_mode'] = True
+
         db = Table()
         times = [10, 11, 12, 13, 14, 15, 16, 17, 18]
         markup = InlineKeyboardMarkup(row_width=1)
@@ -1264,7 +1288,6 @@ def handle_appointment_calendar_back(call):
             bot.send_message(call.message.chat.id, f"Выберите время", reply_markup=markup)
         else:
             bot.send_message(call.message.chat.id, f"В этот день нет свободных дат, пожалуйста, выберите другую дату")
-
 
 # ВРЕМЯ
 @bot.callback_query_handler(func=lambda call: call.data == 'duration')
@@ -1401,7 +1424,13 @@ def show_options_menu(user_id, chat_id):
     markup = InlineKeyboardMarkup()
     markup.add(InlineKeyboardButton(text='Удалить', callback_data='delete'),)
     try:
-        date_, time_, problem_, mechanic_, duration_, lift_ = at.info()[0]
+        date_, time_, problem_, mechanic_, duration_, lift_, user_id_ = at.info()[0]
+        markup = InlineKeyboardMarkup()
+        markup.add(InlineKeyboardButton(text='Удалить запись', callback_data='delete'), )
+        markup.add(
+            InlineKeyboardButton("✅ Принять", callback_data=f'accepted:{user_id_}'),
+            InlineKeyboardButton("❌ Отклонить", callback_data=f'declined:{user_id_}'),
+            row_width=2)
         text = 'Текущая запись:\n'
         text += f"{date_[-2] + date_[-1] + '.' + date_[5] + date_[6]}"
         text += f" {time_}:00\n{problem_}\n"

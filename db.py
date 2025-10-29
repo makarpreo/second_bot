@@ -233,7 +233,7 @@ class Appointment(Table):
         return result
 
     def info(self):
-        query = 'SELECT date, time, problem, mechanic, duration, lift FROM main WHERE id = %s;'
+        query = 'SELECT date, time, problem, mechanic, duration, lift, user_id FROM main WHERE id = %s;'
         result = self.execute_query(query, (self.id,), fetch=True)
         return result
 
