@@ -6,35 +6,28 @@ from telebot.types import (
 )
 import config
 from db import vin_info, Table, Appointment
-from yghbujn import duration
 from ляляля import MyTranslationCalendar
 import telebot
 import traceback
 import logging
 from typing import Optional
-from back import *
+
+
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
-logger = logging.getLogger(__name__)
-# === CONFIGURATION ===
 
+logger = logging.getLogger(__name__)
 TOKEN = config.TOKEN
 GROUP_CHAT_ID = config.test_chat_id
-
 bot = telebot.TeleBot(config.TEST_TOKEN)
-# Хранилище сессий пользователей
 user_sessions = {}
 ADMIN_ID = 997097309
 
 
 # Или проверим callback данные
 
-#
-# @bot.callback_query_handler(func=lambda call: True)
-# def debug_callback(call):
-#     print(f"Full callback data: {call.data}")
 
 def send_error_to_admin(error_message: str, user_info):
     """Отправляет сообщение об ошибке администратору"""
